@@ -14,107 +14,9 @@ namespace ss
         template<typename K>
 		size_t operator()(K &&k) const
 		{
-			// TODO
-			return 0;
+			return std::hash<K>{}(k);
 		}
 	};
-
-    template<typename K, typename V>
-    struct HashNode
-    {
-    private:
-        std::pair<K,V> _key_value;
-        HashNode<K,V> *_next;
-        bool _initialized;
-
-    public:
-        template<typename U, typename W>
-        HashNode(U&& u, W &&w) :
-          _key_value( std::make_pair( std::forward<U>(u), std::forward<W>(w) ) )
-        , _next( nullptr )
-        , _initialized( true )
-        {}
-
-        template<typename U>
-        HashNode(U&& u) :
-        , _next( nullptr )
-        , _initialized( false )
-        {
-            _key_value.first = std::forward<U>( u );
-        }
-
-
-
-        HashNode() : _next( nullptr ), _initialized( false ) {}
-
-        const HashNode<K,V> *next() const noexcept
-        {
-            return _next;
-        }
-
-		HashNode<K, V> *next() noexcept
-		{
-			return _next;
-		}
-
-
-        const std::pair<K,V> &get_key_value() const noexcept
-        {
-            return _key_value;
-        }
-
-		std::pair<K, V> &get_key_value() noexcept
-		{
-			return _key_value;
-		}
-
-
-        HashNode<K,V>* find(const std::function<bool( const HashNode<K,V>& node )> &predicate)
-        {
-            auto *it = this;
-            while( it != nullptr )
-            {
-                if ( predicate( *it ) )
-                {
-                    return it;
-                }
-                it = _next->next();
-            }
-            return nullptr;
-        }
-
-        size_t size() const noexcept
-        {
-            size_t sz = 0;
-            const auto *it = _next;
-            while( it != nullptr )
-            {
-                ++sz;
-                it = _next->next();
-            }
-            return sz;
-        }
-
-        bool initialized() const noexcept
-        {
-            return _initialized;
-        }
-
-        HashNode *get_last() noexcept
-        {
-            if( !initialized )
-            {
-                return this;
-            }
-
-            auto *it = _next;
-            while(it != nullptr)
-            {
-                it = it->next();
-            }
-            return it;
-        }
-    };
 
 	template<typename K, typename V, typename HashFunc = DefaultHash>
 	class HashTable
@@ -125,6 +27,7 @@ namespace ss
         using key_type = K;
         using mapped_type = V;
         using value_type = std::pair<K, V>;
+		using chain_t = std::list<value_type>;
         using hasher = HashFunc;
         using reference = value_type&;
         using const_reference = const value_type&;
@@ -136,7 +39,7 @@ namespace ss
 
         HashTable(size_type max_size = DEFAULT_MAX_SIZE) :
           _MAX_SIZE( max_size )
-        , _buckets( max_size, nullptr )
+		, _buckets(max_size, chain_t{})
         , _bucket_count( max_size )
         , _size( 0 )
         {
@@ -175,9 +78,9 @@ namespace ss
         }
 
         template<typename U>
-        reference operator[](U &&k)
+		mapped_type& operator[](U &&k)
         {
-            return const_cast<mapped_type&>( at_private( std::forward<U>(k), NOT_FOUND_POLICY::INSERT_KEY_VALUE) );
+            return ( at_private( std::forward<U>(k), NOT_FOUND_POLICY::INSERT_KEY_VALUE) );
         }
 
 
@@ -216,21 +119,24 @@ namespace ss
     private:
 
         template<typename U>
-        const mapped_type& at_private( U &&k, NOT_FOUND_POLICY not_found_policy ) const
+        mapped_type& at_private( U &&k, NOT_FOUND_POLICY not_found_policy )
         {
-            size_type bucket_idx = bucket_private( k );
-            auto *node = _buckets[bucket_idx];
-            if( node != nullptr )
-            {
-                auto predicate = [&k]( const HashNode<K,V> &node )
-                {
-                    return std::forward<U>( k ) == node.get_key_value().first;
-                };
+            size_type bucket_idx = bucket_private( std::forward<U>(k) );
+            chain_t &bucket = _buckets[bucket_idx];
+			
+			bool key_found = false;
+			chain_t::iterator it;
+			if (!bucket.empty())
+			{
+				auto predicate = [&k](const std::pair<K, V> &item)
+				{
+					return std::forward<U>(k) == item.first;
+				};
+				it = std::find_if(bucket.begin(), bucket.end(), predicate);
+				key_found = it != bucket.end();
+			}
 
-                node->find( predicate );
-            }
-
-            if( node == nullptr )
+            if( !key_found )
             {
                 if ( not_found_policy == NOT_FOUND_POLICY::THROW_EXCEPTION )
                 {
@@ -238,11 +144,16 @@ namespace ss
                 }
                 else if ( not_found_policy == NOT_FOUND_POLICY::INSERT_KEY_VALUE )
                 {
-                    node = new HashNode<K,V>( std::forward<U>( k ) );
+					std::pair<K, V> p;
+					p.first = std::forward<U>(k);
+					bucket.push_back(std::move(p));
+					return bucket.back().second;
                 }
             }
-
-            return node->get_key_value().second;
+			else
+			{
+				return it->second;
+			}
         }
 
         template<typename U>
@@ -255,7 +166,7 @@ namespace ss
         size_type _size;
         size_type _bucket_count;
         const size_type _MAX_SIZE;
-		std::vector<HashNode<K,V>*> _buckets;
+		std::vector<chain_t> _buckets;
         HashFunc _hash_func;
 	};
 }
