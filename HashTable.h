@@ -6,6 +6,10 @@
 #include <type_traits>
 #include <stdexcept>
 #include <functional>
+#include <deque>
+#include <numeric>
+#include <algorithm>
+#include <boost/dynamic_bitset.hpp>
 
 namespace ss
 {
@@ -19,7 +23,7 @@ namespace ss
 	};
 
 
-	template<typename K, typename V, typename HashFunc = DefaultHash>	
+	template<typename K, typename V, typename HashFunc = DefaultHash>
 	class HashTable
 	{
     private:
@@ -28,7 +32,7 @@ namespace ss
         using key_type = K;
         using mapped_type = V;
         using value_type = std::pair<K, V>;
-		using chain_t = std::list<value_type>;
+		using chain_t = std::deque<value_type>;
 		using bucket_t = std::vector<chain_t>;
         using hasher = HashFunc;
         using reference = value_type&;
@@ -39,10 +43,15 @@ namespace ss
         using difference_type = ptrdiff_t;
         static constexpr size_type DEFAULT_MAX_SIZE = 1<<10;
 
-        HashTable(size_type num_buckets = DEFAULT_MAX_SIZE) :
-		  _buckets(num_buckets, chain_t{})
+        HashTable(size_type max_buckets = DEFAULT_MAX_SIZE) :
+		  _buckets(max_buckets, chain_t{})
         , _bucket_count(0)
+        , _max_buckets( max_buckets )
+		, _bitset(max_buckets)
         , _size( 0 )
+        , _load_factor( 0.0f )
+        , _max_load_factor( 1.0f )
+        , _first_nonempty_bucket( std::numeric_limits<size_type>::max() )
         {
 			constexpr bool hash_func_returns_size_type = std::is_same<std::result_of<HashFunc(const K&)>::type, size_t>::value;
 			static_assert(hash_func_returns_size_type, "hash function does not return size type");
@@ -58,27 +67,28 @@ namespace ss
             return _size;
         }
 
-        size_type max_size() const noexcept
-        {
-            return MAX_SIZE;
-        }
-
         void reserve( size_type n )
         {
             _buckets.reserve( n );
+            // todo: rehash?
         }
 
-        template<typename U>
-        void insert( U &&item );
-
-		void emplace();
+        void clear()
+        {
+            _buckets.assign( _max_buckets, chain_t{} );
+            _size = 0;
+            _bucket_count = 0;
+			_bitset.reset();
+			_load_factor = 0.0f;
+            _first_nonempty_bucket = std::numeric_limits<size_type>::max();
+        }
 
         HashFunc &hash_function() const
         {
             return _hash_func;
         }
 
-       
+
 		mapped_type& operator[](const key_type &k)
         {
             return at_private( const_cast<key_type&>(k), NOT_FOUND_POLICY::INSERT_KEY_VALUE);
@@ -89,8 +99,6 @@ namespace ss
 			return at_private(std::move(k), NOT_FOUND_POLICY::INSERT_KEY_VALUE);
 		}
 
-
-
         mapped_type& at ( const key_type& k )
         {
             return at_private( k, NOT_FOUND_POLICY::THROW_EXCEPTION);
@@ -100,7 +108,6 @@ namespace ss
         {
             return at_private( k, NOT_FOUND_POLICY::THROW_EXCEPTION);
         }
-
 
         size_type bucket( const key_type &k ) const noexcept
         {
@@ -122,7 +129,30 @@ namespace ss
 			_buckets[n].size();
         }
 
+        size_type count( const key_type & key) const
+        {
+            size_type n = bucket_private( key );
+            if( _buckets[n].empty() )
+                return 0;
 
+            return 1;
+        }
+
+        float max_load_factor() const noexcept
+        {
+            return _max_load_factor;
+        }
+
+        void max_load_factor ( float z )
+        {
+            _max_load_factor = z;
+            // rehash?
+        }
+
+        void rehash( size_type n )
+        {
+            // todo
+        }
 
 		class iterator
 		{
@@ -169,7 +199,11 @@ namespace ss
 
 		private:
 			pointer _ptr;
+            size_type bucket_idx;
 		};
+
+        iterator begin();
+        iterator end();
 
     private:
 
@@ -200,11 +234,17 @@ namespace ss
                 else if ( not_found_policy == NOT_FOUND_POLICY::INSERT_KEY_VALUE )
                 {
 					if (bucket.empty())
+                    {
 						++_bucket_count;
+                        if( bucket_idx < _first_nonempty_bucket )
+                            _first_nonempty_bucket = bucket_idx;
+                    }
+
 					std::pair<K, V> p;
 					p.first = std::forward<U>(k);
-					bucket.push_back(std::move(p));				
+					bucket.emplace_back(std::move(p));
 					++_size;
+					_bitset[bucket_idx] = 1;
 					return bucket.back().second;
                 }
             }
@@ -215,13 +255,19 @@ namespace ss
         template<typename U>
         size_type bucket_private( U &&k ) const noexcept
         {
-            const size_type idx = _hash_func( std::forward<U>(k) ) % _bucket_count;
+            const size_type idx = _hash_func( std::forward<U>(k) ) % _max_buckets;
             return idx;
         }
 
+        size_type _max_buckets;
         size_type _size;
         size_type _bucket_count;
+        size_type _first_nonempty_bucket;
+        float _load_factor;
+        float _max_load_factor;
 		std::vector<chain_t> _buckets;
+		boost::dynamic_bitset<> _bitset;
         HashFunc _hash_func;
 	};
 }
+
