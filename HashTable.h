@@ -230,12 +230,12 @@ namespace ss
         HashFunc _hash_func;
 
         template<bool is_const_iterator = true>
-        class _ht_iterator : public std::iterator<std::forward_iterator_tag, HashTableType::value_type>
+        class _ht_iterator : public std::iterator<std::forward_iterator_tag, value_type>
         {
         public:
             typedef typename std::conditional<is_const_iterator, const HashTableType*, HashTableType*>::type container_ptr_t;
-            typedef typename std::conditional<is_const_iterator, const HashTableType::value_type&, HashTableType::value_type&>::type ValueReferenceType;
-            typedef typename std::conditional<is_const_iterator, const HashTableType::value_type*, HashTableType::value_type*>::type ValuePointerType;
+            typedef typename std::conditional<is_const_iterator, const value_type&, value_type&>::type ValueReferenceType;
+            typedef typename std::conditional<is_const_iterator, const value_type*, value_type*>::type ValuePointerType;
 
             _ht_iterator(container_ptr_t container = nullptr, size_type bucket_idx = std::numeric_limits<size_type>::max(), size_type chain_idx = std::numeric_limits<size_type>::max())
             : _container( container )
@@ -267,7 +267,7 @@ namespace ss
                     return *this;
                 }
 
-                //return _container->end();
+                return _container->end();
             }
 
             _ht_iterator operator++(int dummy)
@@ -337,50 +337,50 @@ namespace ss
 
     public:
 
-        // using iterator = _ht_iterator<value_type>;
-        // using const_iterator = _ht_iterator<const value_type>;
+         using iterator = _ht_iterator<false>;
+         using const_iterator = _ht_iterator<true>;
 
-        // iterator begin()
-        // {
-        //     return iterator(this, _first_nonempty_bucket, 0);
-        // }
+         iterator begin()
+         {
+             return iterator(this, _first_nonempty_bucket, 0);
+         }
 
-        // iterator end()
-        // {
-        //     return iterator( this, _last_nonempty_bucket, _buckets[_last_nonempty_bucket].size() );
-        // }
+         iterator end()
+         {
+             return iterator( this, _last_nonempty_bucket, _buckets[_last_nonempty_bucket].size() );
+         }
 
-        // const_iterator begin() const
-        // {
-        //     return const_iterator(this, _first_nonempty_bucket, 0);
-        // }
+         const_iterator begin() const
+         {
+             return const_iterator(this, _first_nonempty_bucket, 0);
+         }
 
-        // const_iterator end() const
-        // {
-        //     return const_iterator( this, _last_nonempty_bucket, _buckets[_last_nonempty_bucket].size() );
-        // }
+         const_iterator end() const
+         {
+             return const_iterator( this, _last_nonempty_bucket, _buckets[_last_nonempty_bucket].size() );
+         }
 
-        // iterator find( const K &key )
-        // {
-        //     size_type bucket_idx = bucket_private( key );
-        //     chain_t &bucket = _buckets[bucket_idx];
+         iterator find( const K &key )
+         {
+             size_type bucket_idx = bucket_private( key );
+             chain_t &bucket = _buckets[bucket_idx];
 
-        //     if (!bucket.empty())
-        //     {
-        //         auto predicate = [&key](const std::pair<K, V> &item)
-        //         {
-        //             return key == item.first;
-        //         };
+             if (!bucket.empty())
+             {
+                 auto predicate = [&key](const std::pair<K, V> &item)
+                 {
+                     return key == item.first;
+                 };
 
-        //         const chain_t::iterator it = std::find_if(bucket.begin(), bucket.end(), predicate);
-        //         const bool key_found = it != bucket.end();
+                 const chain_t::iterator it = std::find_if(bucket.begin(), bucket.end(), predicate);
+                 const bool key_found = it != bucket.end();
 
-        //         if( key_found )
-        //             return iterator( this, bucket_idx, std::distance( bucket.begin(), it ) );
-        //     }
+                 if( key_found )
+                     return iterator( this, bucket_idx, std::distance( bucket.begin(), it ) );
+             }
 
-        //     return end();
-        // }
+             return end();
+         }
 	};
 
   //   template<typename K, typename V, typename HashFunc = DefaultHash>
