@@ -236,18 +236,19 @@ namespace ss
             typedef typename std::conditional<is_const_iterator, const HashTableType*, HashTableType*>::type container_ptr_t;
             typedef typename std::conditional<is_const_iterator, const value_type&, value_type&>::type ValueReferenceType;
             typedef typename std::conditional<is_const_iterator, const value_type*, value_type*>::type ValuePointerType;
-
+			friend class container_t;
+			friend class _ht_iterator<false>;
+			friend class _ht_iterator<true>;
             _ht_iterator(container_ptr_t container = nullptr, size_type bucket_idx = std::numeric_limits<size_type>::max(), size_type chain_idx = std::numeric_limits<size_type>::max())
             : _container( container )
-            , _bucket_idx(bucket_idx)
-            , _chain_idx(chain_idx) {}
+            , _bucket_idx( bucket_idx )
+            , _chain_idx( chain_idx ) {}
 
             _ht_iterator( const _ht_iterator<false> &other )
             : _container( other._container )
             , _bucket_idx( other._bucket_idx )
             , _chain_idx( other._chain_idx )
             {}
-
 
             _ht_iterator &operator++()
             {
@@ -274,7 +275,7 @@ namespace ss
             {
                 assert( _container != nullptr && _bucket_idx < _container->_max_buckets && _chain_idx < _container->_buckets[_bucket_idx].size());
                 const auto &chain = _container->_buckets[_bucket_idx];
-                if( _chain_idx < (chain.size() - 1))
+                if( _chain_idx < (chain.size() - 1) )
                 {
                     _ht_iterator me = *this;
                     _chain_idx++;
@@ -305,12 +306,12 @@ namespace ss
                 return &(_container->_buckets[_bucket_idx][_chain_idx]);
             }
 
-            bool operator==(const _ht_iterator &other)
+            bool operator==(const _ht_iterator &other) const
             {
                 return ( _container == other._container && _bucket_idx == other._bucket_idx && _chain_idx == other._chain_idx);
             }
 
-            bool operator !=(const _ht_iterator &other)
+            bool operator !=(const _ht_iterator &other) const
             {
                 return ( _container != other._container || _bucket_idx != other._bucket_idx || _chain_idx != other._chain_idx);
             }
@@ -327,8 +328,7 @@ namespace ss
             }
 
         private:
-			friend class container_t;
-            friend class _ht_iterator<false>;
+
             container_ptr_t _container;
             size_type _bucket_idx;
             size_type _chain_idx;
@@ -360,46 +360,70 @@ namespace ss
              return const_iterator( this, _last_nonempty_bucket, _buckets[_last_nonempty_bucket].size() );
          }
 
-         iterator find( const K &key )
-         {
-             size_type bucket_idx = bucket_private( key );
-             chain_t &bucket = _buckets[bucket_idx];
+		 private:
+			 std::pair<size_t, size_t> find_private(const K &key) const
+			 {
+				 size_type bucket_idx = bucket_private(key);
+				 const chain_t &bucket = _buckets[bucket_idx];
 
-             if (!bucket.empty())
-             {
-                 auto predicate = [&key](const std::pair<K, V> &item)
-                 {
-                     return key == item.first;
-                 };
+				 if (!bucket.empty())
+				 {
+					 auto predicate = [&key](const std::pair<K, V> &item)
+					 {
+						 return key == item.first;
+					 };
 
-                 const chain_t::iterator it = std::find_if(bucket.begin(), bucket.end(), predicate);
-                 const bool key_found = it != bucket.end();
+					 chain_t::const_iterator it = std::find_if(bucket.begin(), bucket.end(), predicate);
+					 const bool key_found = it != bucket.end();
 
-                 if( key_found )
-                     return iterator( this, bucket_idx, std::distance( bucket.begin(), it ) );
-             }
+					 if (key_found)
+						 std::make_pair(bucket_idx, static_cast<size_t>(std::distance(bucket.begin(), it)));
+				 }
 
-             return end();
-         }
+				 return std::make_pair(_last_nonempty_bucket, _buckets[_last_nonempty_bucket].size());
+			 }
+		 public:
+
+		 iterator find(const K &key)
+		 {
+			 auto bucket_chain_idx = find_private(key);
+             return iterator( this, bucket_chain_idx.first, bucket_chain_idx.second );
+		 }
+
+		 const_iterator find(const K &key) const
+		 {
+			 auto bucket_chain_idx = find_private(key);
+			 return const_iterator(this, bucket_chain_idx.first, bucket_chain_idx.second);
+		 }
 	};
 
-  //   template<typename K, typename V, typename HashFunc = DefaultHash>
-  //   bool operator==(const HashTable<K,V,HashFunc> &lhs, const HashTable<K,V,HashFunc> &rhs)
-  //   {
-  //       if( lhs.size() != rhs.size() )
-  //           return false;
+    template<typename K, typename V, typename HashFunc = DefaultHash>
+    bool operator==(const HashTable<K,V,HashFunc> &lhs, const HashTable<K,V,HashFunc> &rhs)
+    {
+        if( lhs.size() != rhs.size() )
+            return false;
 
-		// for (const auto it = lhs.begin(); it != lhs.end(); ++it) {}
-  //       //{
+		for (const auto &kv : lhs)
+		{
+			const K& key = kv.first;
 
-  //       //}
-  //   }
+			HashTable<K, V, HashFunc>::const_iterator rhs_it = rhs.find(key);
+			const bool not_found = rhs.end() == rhs_it;
+			if (not_found)
+				return false;
 
-  //   template<typename K, typename V, typename HashFunc = DefaultHash>
-  //   bool operator!=( const HashTable<K,V,HashFunc> &lhs, const HashTable<K,V,HashFunc> &rhs)
-  //   {
-  //       return false;
-  //   }
+			if (kv.second != rhs_it->second)
+				return false;
+		}
+
+		return true;
+    }
+
+    template<typename K, typename V, typename HashFunc = DefaultHash>
+    bool operator!=( const HashTable<K,V,HashFunc> &lhs, const HashTable<K,V,HashFunc> &rhs)
+    {
+        return !( lhs == rhs );
+    }
 
 
 }
