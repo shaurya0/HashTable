@@ -30,6 +30,7 @@ int main()
 	HashTable<int, int> ht;
 	HashTable<int, int> ht1;
 	ht[2] = 3;
+	ht.insert(std::make_pair(3, 4));
 	ht.clear();
     stress_test_hash_table(  );
 	getchar();

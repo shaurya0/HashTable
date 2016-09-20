@@ -53,7 +53,7 @@ namespace ss
 			, _size(0)
 			, _load_factor(0.0f)
 			, _max_load_factor(1.0f)
-			, _first_nonempty_bucket(0)
+			, _first_nonempty_bucket(std::numeric_limits<size_type>::max())
 			, _last_nonempty_bucket(0)
 		{
 			constexpr bool hash_func_returns_size_type = std::is_same<std::result_of<HashFunc(const K&)>::type, size_t>::value;
@@ -77,8 +77,8 @@ namespace ss
 			_bucket_count = 0;
 			_non_empty_buckets.reset();
 			_load_factor = 0.0f;
-			_first_nonempty_bucket = _max_buckets;
-			_last_nonempty_bucket = _max_buckets;
+			_first_nonempty_bucket = std::numeric_limits<size_type>::max();
+			_last_nonempty_bucket = 0;
 		}
 
 		HashFunc &hash_function() const
@@ -159,7 +159,6 @@ namespace ss
 		{
 			if (n < _max_buckets)
 				return;
-
 		}
 
 	private:
@@ -187,14 +186,47 @@ namespace ss
 		}
 
 		template<typename U>
+		mapped_type& insert_in_container(size_type bucket_idx, U &&value, size_t *chain_idx = nullptr)
+		{
+            chain_t &bucket = _buckets[bucket_idx];
+            if (bucket.empty())
+            {
+                ++_bucket_count;
+                _non_empty_buckets[bucket_idx] = 1;
+
+                if (bucket_idx < _first_nonempty_bucket)
+                    _first_nonempty_bucket = bucket_idx;
+
+                if (bucket_idx > _last_nonempty_bucket)
+                    _last_nonempty_bucket = bucket_idx;
+            }
+
+			bucket.push_back(std::forward<U>(value));
+			++_size;
+
+			if (chain_idx != nullptr)
+				*chain_idx = bucket.size() - 1;
+
+			_load_factor = static_cast<float>(_size) / static_cast<float>(_bucket_count);
+
+			//size_t buckets = _max_buckets << 1;
+			//while (_load_factor >= _max_load_factor)
+			//{
+			//	rehash(buckets);
+			//	buckets <<= 1;
+			//}
+
+			return _buckets[bucket_idx].back().second;
+		}
+
+		template<typename U>
 		mapped_type& at_private(U &&k, NOT_FOUND_POLICY not_found_policy)
 		{
 			auto found = find_private(std::forward<U>(k));
 			const bool key_found = std::get<0>(found);
-			size_t bucket_idx = std::get<1>(found);
-			size_t chain_idx = std::get<2>(found);
+			const size_type bucket_idx = std::get<1>(found);
+			const size_type chain_idx = std::get<2>(found);
 
-			chain_t &bucket = _buckets[bucket_idx];
 			if (!key_found)
 			{
 				if (not_found_policy == NOT_FOUND_POLICY::THROW_EXCEPTION)
@@ -203,24 +235,10 @@ namespace ss
 				}
 				else if (not_found_policy == NOT_FOUND_POLICY::INSERT_KEY_VALUE)
 				{
-					if (bucket.empty())
-					{
-						++_bucket_count;
-						_non_empty_buckets[bucket_idx] = 1;
-
-						if (bucket_idx < _first_nonempty_bucket)
-							_first_nonempty_bucket = bucket_idx;
-
-						if (bucket_idx > _last_nonempty_bucket)
-							_last_nonempty_bucket = bucket_idx;
-					}
-                    //TODO: update load factor
-
 					std::pair<K, V> p;
 					p.first = std::forward<U>(k);
-					bucket.emplace_back(std::move(p));
-					++_size;
-					return bucket.back().second;
+
+                    return insert_in_container( bucket_idx, std::move( p ) );
 				}
 			}
 
@@ -353,7 +371,6 @@ namespace ss
 
 
 	public:
-
 		using iterator = _ht_iterator<false>;
 		using const_iterator = _ht_iterator<true>;
 
@@ -366,6 +383,7 @@ namespace ss
 		{
 			if (_size == 0)
 				return end();
+
 			return iterator(this, _last_nonempty_bucket, _buckets[_last_nonempty_bucket].size());
 		}
 
@@ -373,6 +391,7 @@ namespace ss
 		{
 			if (_size == 0)
 				return end();
+
 			return const_iterator(this, _first_nonempty_bucket, 0);
 		}
 
@@ -386,9 +405,7 @@ namespace ss
 		{
 			auto found = find_private(key);
 			if (std::get<0>(found))
-			{
 				return iterator(this, std::get<1>(found), std::get<2>(found));
-			}
 
 			return end();
 		}
@@ -397,9 +414,7 @@ namespace ss
 		{
 			auto found = find_private(key);
 			if (std::get<0>(found))
-			{
 				return const_iterator(this, std::get<1>(found), std::get<2>(found));
-			}
 
 			return end();
 		}
@@ -411,7 +426,11 @@ namespace ss
 			if(std::get<0>(found))
 				return std::make_pair(end(), false);
 
-			return std::make_pair(iterator(this, std::get<1>(found), std::get<2>(found)), true);
+            size_t chain_idx = 0;
+			const size_t bucket_idx = std::get<1>(found);
+
+            insert_in_container( bucket_idx, std::forward<U>( val ), &chain_idx );
+			return std::make_pair(iterator(this, bucket_idx, chain_idx), true);
 		}
 
 	public:
@@ -486,7 +505,13 @@ namespace ss
             return *this;
 		}
 
-		//HashTableType& operator= (intitializer_list<value_type> il);
+		//HashTableType& operator= (intitializer_list<value_type> il)
+		//{
+		//	for (auto &item : il)
+		//	{
+		//		insert()
+		//	}
+		//}
 	};
 
 	template<typename K, typename V, typename HashFunc = DefaultHash>
