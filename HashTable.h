@@ -1,3 +1,10 @@
+// TODO:
+// bucket count, max buckets mixup fix
+// rehashing
+// clear/init function
+// constructors
+// unit tests
+
 #pragma once
 #include <vector>
 #include <iterator>
