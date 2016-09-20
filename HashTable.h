@@ -1,8 +1,4 @@
 // TODO:
-// bucket count, max buckets mixup fix
-// rehashing
-// clear/init function
-// constructors
 // unit tests
 
 #pragma once
@@ -49,23 +45,50 @@ namespace ss
 		using const_pointer = const value_type*;
 		using size_type = size_t;
 		using difference_type = ptrdiff_t;
-		static constexpr size_type DEFAULT_MAX_SIZE = 1 << 10;
+
+		typedef typename chain_t::iterator local_iterator;
+		typedef typename chain_t::const_iterator const_local_iterator;
+
+		static constexpr size_type DEFAULT_BUCKET_COUNT = 1 << 10;
 		typedef typename HashTable<K, V, HashFunc> HashTableType;
 
-		HashTable(size_type max_buckets = DEFAULT_MAX_SIZE) :
-			_buckets(max_buckets, chain_t{})
-			, _bucket_count(0)
-			, _max_buckets(max_buckets)
-			, _non_empty_buckets(max_buckets)
-			, _size(0)
-			, _load_factor(0.0f)
-			, _max_load_factor(1.0f)
-			, _first_nonempty_bucket(std::numeric_limits<size_type>::max())
-			, _last_nonempty_bucket(0)
+		explicit HashTable(size_type bucket_count = DEFAULT_BUCKET_COUNT)
 		{
 			constexpr bool hash_func_returns_size_type = std::is_same<std::result_of<HashFunc(const K&)>::type, size_t>::value;
 			static_assert(hash_func_returns_size_type, "hash function does not return size type");
+
+            _init( bucket_count );
 		}
+
+        template <class InputIterator>
+        HashTable ( InputIterator first, InputIterator last,
+            size_type n = DEFAULT_BUCKET_COUNT)
+        {
+            const size_type first_last_distance = std::distance(first, last);
+            size_type bucket_count = first_last_distance > n ? first_last_distance : n;
+            _init( bucket_count );
+            insert( first, last );
+        }
+
+        HashTable ( const HashTableType& ump )
+        {
+            *this = ump;
+        }
+
+        HashTable ( HashTableType&& ump )
+        {
+            *this = std::move(ump);
+        }
+
+        HashTable ( std::initializer_list<value_type> il,
+                        size_type n = DEFAULT_BUCKET_COUNT)
+        {
+            const size_type il_size = il.size();
+            size_type bucket_count = il_size > n ? il_size : n;
+            _init( bucket_count );
+            insert( il );
+        }
+
 
 		bool empty() const noexcept
 		{
@@ -79,13 +102,7 @@ namespace ss
 
 		void clear()
 		{
-			_buckets.assign(_max_buckets, chain_t{});
-			_size = 0;
-			_bucket_count = 0;
-			_non_empty_buckets.reset();
-			_load_factor = 0.0f;
-			_first_nonempty_bucket = std::numeric_limits<size_type>::max();
-			_last_nonempty_bucket = 0;
+			_init(DEFAULT_BUCKET_COUNT);
 		}
 
 		HashFunc &hash_function() const
@@ -96,22 +113,22 @@ namespace ss
 
 		mapped_type& operator[](const key_type &k)
 		{
-			return at_private(const_cast<key_type&>(k), NOT_FOUND_POLICY::INSERT_KEY_VALUE);
+			return _at(const_cast<key_type&>(k), NOT_FOUND_POLICY::INSERT_KEY_VALUE);
 		}
 
 		mapped_type& operator[](K &&k)
 		{
-			return at_private(std::move(k), NOT_FOUND_POLICY::INSERT_KEY_VALUE);
+			return _at(std::move(k), NOT_FOUND_POLICY::INSERT_KEY_VALUE);
 		}
 
 		mapped_type& at(const key_type& k)
 		{
-			return at_private(k, NOT_FOUND_POLICY::THROW_EXCEPTION);
+			return _at(k, NOT_FOUND_POLICY::THROW_EXCEPTION);
 		}
 
 		const mapped_type& at(const key_type& k) const
 		{
-			return at_private(k, NOT_FOUND_POLICY::THROW_EXCEPTION);
+			return _at(k, NOT_FOUND_POLICY::THROW_EXCEPTION);
 		}
 
 		size_type bucket(const key_type &k) const noexcept
@@ -150,28 +167,30 @@ namespace ss
 
 		void reserve(size_type n)
 		{
-			size_type nload = static_cast<size_type>(n * _max_load_factor);
-			if (nload > _max_buckets)
-				rehash(nload);
+			size_type nload = static_cast<size_type>(_bucket_count * _max_load_factor);
+			if (nload < n)
+				rehash(n);
 		}
 
 		void max_load_factor(float z)
 		{
-			size_type nload = static_cast<size_type>(n * _max_load_factor);
-			if (nload > _max_buckets)
-				rehash(nload);
+			size_type nload = static_cast<size_type>(_bucket_count * _max_load_factor);
+			if (nload < n)
+				rehash(n);
 		}
 
 		void rehash(size_type n)
 		{
-			if (n < _max_buckets)
+			if (n < _bucket_count)
 				return;
+
+            *this = std::move( HashTableType( _buckets.begin(), _buckets.end(), n ) );
 		}
 
 	private:
 		//0: found, 1: bucket index, 2: chain index
 		template<typename U>
-		std::tuple<bool, size_t, size_t> find_private(U &&k) const noexcept
+		std::tuple<bool, size_t, size_t> _find(U &&k) const noexcept
 		{
 			size_type bucket_idx = bucket_private(std::forward<U>(k));
 			const chain_t &bucket = _buckets[bucket_idx];
@@ -193,7 +212,7 @@ namespace ss
 		}
 
 		template<typename U>
-		mapped_type& insert_in_container(size_type bucket_idx, U &&value, size_t *chain_idx = nullptr)
+		mapped_type& _insert_in_container(size_type bucket_idx, U &&value, size_t *chain_idx = nullptr)
 		{
             chain_t &bucket = _buckets[bucket_idx];
             if (bucket.empty())
@@ -214,22 +233,24 @@ namespace ss
 			if (chain_idx != nullptr)
 				*chain_idx = bucket.size() - 1;
 
-			_load_factor = static_cast<float>(_size) / static_cast<float>(_bucket_count);
+            _load_factor = static_cast<float>(_size) / static_cast<float>(_bucket_count);
 
-			//size_t buckets = _max_buckets << 1;
-			//while (_load_factor >= _max_load_factor)
-			//{
-			//	rehash(buckets);
-			//	buckets <<= 1;
-			//}
+            size_t buckets = _bucket_count << 1;
+            while (_load_factor >= _max_load_factor)
+            {
+                buckets <<= 1;
+                _load_factor = static_cast<float>(_size) / static_cast<float>(buckets);
+            }
+
+            // rehash(buckets);
 
 			return _buckets[bucket_idx].back().second;
 		}
 
 		template<typename U>
-		mapped_type& at_private(U &&k, NOT_FOUND_POLICY not_found_policy)
+		mapped_type& _at(U &&k, NOT_FOUND_POLICY not_found_policy)
 		{
-			auto found = find_private(std::forward<U>(k));
+			auto found = _find(std::forward<U>(k));
 			const bool key_found = std::get<0>(found);
 			const size_type bucket_idx = std::get<1>(found);
 			const size_type chain_idx = std::get<2>(found);
@@ -245,7 +266,7 @@ namespace ss
 					std::pair<K, V> p;
 					p.first = std::forward<U>(k);
 
-                    return insert_in_container( bucket_idx, std::move( p ) );
+                    return _insert_in_container( bucket_idx, std::move( p ) );
 				}
 			}
 
@@ -255,11 +276,10 @@ namespace ss
 		template<typename U>
 		size_type bucket_private(U &&k) const noexcept
 		{
-			const size_type idx = _hash_func(std::forward<U>(k)) % _max_buckets;
+			const size_type idx = _hash_func(std::forward<U>(k)) % _bucket_count;
 			return idx;
 		}
 
-		size_type _max_buckets;
 		size_type _size;
 		size_type _bucket_count;
 		size_type _first_nonempty_bucket;
@@ -295,7 +315,7 @@ namespace ss
 
 			_ht_iterator &operator++()
 			{
-				assert(_container != nullptr && _bucket_idx < _container->_max_buckets && _chain_idx < _container->_buckets[_bucket_idx].size());
+				assert(_container != nullptr && _bucket_idx < _container->_bucket_count && _chain_idx < _container->_buckets[_bucket_idx].size());
 				const auto &chain = _container->_buckets[_bucket_idx];
 				if (_chain_idx < (chain.size() - 1))
 				{
@@ -316,7 +336,7 @@ namespace ss
 
 			_ht_iterator operator++(int dummy)
 			{
-				assert(_container != nullptr && _bucket_idx < _container->_max_buckets && _chain_idx < _container->_buckets[_bucket_idx].size());
+				assert(_container != nullptr && _bucket_idx < _container->_bucket_count && _chain_idx < _container->_buckets[_bucket_idx].size());
 				const auto &chain = _container->_buckets[_bucket_idx];
 				if (_chain_idx < (chain.size() - 1))
 				{
@@ -339,13 +359,13 @@ namespace ss
 
 			reference_type_it_t operator*()
 			{
-				assert(_container != nullptr && _bucket_idx < _container->_max_buckets && _chain_idx < _container->_buckets[_bucket_idx].size());
+				assert(_container != nullptr && _bucket_idx < _container->_bucket_count && _chain_idx < _container->_buckets[_bucket_idx].size());
 				return _container->_buckets[_bucket_idx][_chain_idx];
 			}
 
 			pointer_type_it_t operator->()
 			{
-				assert(_container != nullptr && _bucket_idx < _container->_max_buckets && _chain_idx < _container->_buckets[_bucket_idx].size());
+				assert(_container != nullptr && _bucket_idx < _container->_bucket_count && _chain_idx < _container->_buckets[_bucket_idx].size());
 				return &(_container->_buckets[_bucket_idx][_chain_idx]);
 			}
 
@@ -410,7 +430,7 @@ namespace ss
 
 		iterator find(const K &key)
 		{
-			auto found = find_private(key);
+			auto found = _find(key);
 			if (std::get<0>(found))
 				return iterator(this, std::get<1>(found), std::get<2>(found));
 
@@ -419,24 +439,38 @@ namespace ss
 
 		const_iterator find(const K &key) const
 		{
-			auto found = find_private(key);
+			auto found = _find(key);
 			if (std::get<0>(found))
 				return const_iterator(this, std::get<1>(found), std::get<2>(found));
 
 			return end();
 		}
 	private:
-		template<typename U>
-		std::pair<iterator, bool> insert_private(U &&val)
+		void _init(size_type bucket_count)
 		{
-			auto found = find_private(val.first);
+			_bucket_count = bucket_count;
+			_buckets.assign(_bucket_count, chain_t{});
+			_size = 0;
+			_non_empty_buckets.resize(bucket_count);
+			_non_empty_buckets.reset();
+			_load_factor = 0.0f;
+			_max_load_factor = 1.0f;
+			_first_nonempty_bucket = std::numeric_limits<size_type>::max();
+			_last_nonempty_bucket = 0;
+
+		}
+
+		template<typename U>
+		std::pair<iterator, bool> _insert(U &&val)
+		{
+			auto found = _find(val.first);
 			if(std::get<0>(found))
 				return std::make_pair(end(), false);
 
             size_t chain_idx = 0;
 			const size_t bucket_idx = std::get<1>(found);
 
-            insert_in_container( bucket_idx, std::forward<U>( val ), &chain_idx );
+            _insert_in_container( bucket_idx, std::forward<U>( val ), &chain_idx );
 			return std::make_pair(iterator(this, bucket_idx, chain_idx), true);
 		}
 
@@ -444,24 +478,24 @@ namespace ss
 
 		std::pair<iterator, bool> insert(const value_type& val)
 		{
-			return insert_private(val);
+			return _insert(val);
 		}
 
 		template <class P>
 		std::pair<iterator, bool> insert(P&& val)
 		{
-			return insert_private(std::forward<P>(val));
+			return _insert(std::forward<P>(val));
 		}
 
 		iterator insert(const_iterator hint, const value_type& val)
 		{
-			return insert_private(val).first;
+			return _insert(val).first;
 		}
 
 		template <class P>
 		iterator insert(const_iterator hint, P&& val)
 		{
-			return insert_private(std::forward<P>(val)).first;
+			return _insert(std::forward<P>(val)).first;
 		}
 
 		template <class InputIterator>
@@ -469,7 +503,7 @@ namespace ss
 		{
 			while (first != last)
 			{
-				insert_private(*first);
+				_insert(*first);
 				++first;
 			}
 		}
@@ -478,13 +512,12 @@ namespace ss
 		{
 			for (auto &value : il)
 			{
-				insert_private(value);
+				_insert(value);
 			}
 		}
 
 		HashTableType& operator= (const HashTableType& ht)
 		{
-            _max_buckets = ht._max_buckets;
             _size = ht._size;
             _bucket_count = ht._bucket_count;
             _first_nonempty_bucket = ht._first_nonempty_bucket;
@@ -499,7 +532,6 @@ namespace ss
 
 		HashTableType& operator= (HashTableType&& ht)
 		{
-            _max_buckets = std::move(ht._max_buckets);
             _size = std::move(ht._size);
             _bucket_count = std::move(ht._bucket_count);
             _first_nonempty_bucket = std::move(ht._first_nonempty_bucket);
@@ -512,13 +544,11 @@ namespace ss
             return *this;
 		}
 
-		//HashTableType& operator= (intitializer_list<value_type> il)
-		//{
-		//	for (auto &item : il)
-		//	{
-		//		insert()
-		//	}
-		//}
+		HashTableType& operator= (std::initializer_list<value_type> il)
+		{
+			_init(il.size());
+			insert(il);
+		}
 	};
 
 	template<typename K, typename V, typename HashFunc = DefaultHash>

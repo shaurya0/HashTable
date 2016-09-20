@@ -25,13 +25,19 @@ int main()
 
 	std::unordered_map<int, int> um;
 	int x = um.bucket_count();
-	int y = um.max_bucket_count();
+	for (int i = 0; i < 16; ++i)
+	{
+		um[i] = i;
+	}
 
+	x = um.bucket_count();
+
+	um.clear();
+	x = um.bucket_count();
 	HashTable<int, int> ht;
 	HashTable<int, int> ht1;
 	ht[2] = 3;
 	ht.insert(std::make_pair(3, 4));
-	ht.clear();
     stress_test_hash_table(  );
 	getchar();
 	return 0;
