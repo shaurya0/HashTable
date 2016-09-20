@@ -53,7 +53,8 @@ namespace ss
 			, _size(0)
 			, _load_factor(0.0f)
 			, _max_load_factor(1.0f)
-			, _first_nonempty_bucket(std::numeric_limits<size_type>::max())
+			, _first_nonempty_bucket(0)
+			, _last_nonempty_bucket(0)
 		{
 			constexpr bool hash_func_returns_size_type = std::is_same<std::result_of<HashFunc(const K&)>::type, size_t>::value;
 			static_assert(hash_func_returns_size_type, "hash function does not return size type");
@@ -76,8 +77,8 @@ namespace ss
 			_bucket_count = 0;
 			_non_empty_buckets.reset();
 			_load_factor = 0.0f;
-			_first_nonempty_bucket = std::numeric_limits<size_type>::max();
-			_last_nonempty_bucket = std::numeric_limits<size_type>::max();
+			_first_nonempty_bucket = _max_buckets;
+			_last_nonempty_bucket = _max_buckets;
 		}
 
 		HashFunc &hash_function() const
@@ -156,6 +157,8 @@ namespace ss
 
 		void rehash(size_type n)
 		{
+			if (n < _max_buckets)
+				return;
 
 		}
 
@@ -211,6 +214,7 @@ namespace ss
 						if (bucket_idx > _last_nonempty_bucket)
 							_last_nonempty_bucket = bucket_idx;
 					}
+                    //TODO: update load factor
 
 					std::pair<K, V> p;
 					p.first = std::forward<U>(k);
@@ -252,7 +256,8 @@ namespace ss
 			friend class container_t;
 			friend class _ht_iterator<false>;
 			friend class _ht_iterator<true>;
-			_ht_iterator(container_ptr_t container = nullptr, size_type bucket_idx = std::numeric_limits<size_type>::max(), size_type chain_idx = std::numeric_limits<size_type>::max())
+
+			_ht_iterator(container_ptr_t container = nullptr, size_type bucket_idx = 0, size_type chain_idx = 0)
 				: _container(container)
 				, _bucket_idx(bucket_idx)
 				, _chain_idx(chain_idx) {}
@@ -341,7 +346,6 @@ namespace ss
 			}
 
 		private:
-
 			container_ptr_t _container;
 			size_type _bucket_idx;
 			size_type _chain_idx;
@@ -360,18 +364,22 @@ namespace ss
 
 		iterator end()
 		{
+			if (_size == 0)
+				return end();
 			return iterator(this, _last_nonempty_bucket, _buckets[_last_nonempty_bucket].size());
 		}
 
 		const_iterator begin() const
 		{
+			if (_size == 0)
+				return end();
 			return const_iterator(this, _first_nonempty_bucket, 0);
 		}
 
 		const_iterator end() const
 		{
 			return const_iterator(this, _last_nonempty_bucket, _buckets[_last_nonempty_bucket].size());
-		}	
+		}
 	public:
 
 		iterator find(const K &key)
@@ -399,7 +407,7 @@ namespace ss
 		template<typename U>
 		std::pair<iterator, bool> insert_private(U &&val)
 		{
-			auto found = find_private(val.first);			
+			auto found = find_private(val.first);
 			if(std::get<0>(found))
 				return std::make_pair(end(), false);
 
@@ -440,13 +448,45 @@ namespace ss
 			}
 		}
 
-		void insert(std::initializer_list<value_type> il) 
+		void insert(std::initializer_list<value_type> il)
 		{
 			for (auto &value : il)
 			{
 				insert_private(value);
 			}
 		}
+
+		HashTableType& operator= (const HashTableType& ht)
+		{
+            _max_buckets = ht._max_buckets;
+            _size = ht._size;
+            _bucket_count = ht._bucket_count;
+            _first_nonempty_bucket = ht._first_nonempty_bucket;
+            _last_nonempty_bucket = ht._last_nonempty_bucket;
+
+            _load_factor = ht._load_factor;
+            _max_load_factor = ht._max_load_factor;
+            _buckets = ht._buckets;
+            _non_empty_buckets = ht._non_empty_buckets;
+			return *this;
+		}
+
+		HashTableType& operator= (HashTableType&& ht)
+		{
+            _max_buckets = std::move(ht._max_buckets);
+            _size = std::move(ht._size);
+            _bucket_count = std::move(ht._bucket_count);
+            _first_nonempty_bucket = std::move(ht._first_nonempty_bucket);
+            _last_nonempty_bucket = std::move(ht._last_nonempty_bucket);
+
+            _load_factor = std::move(ht._load_factor);
+            _max_load_factor = std::move(ht._max_load_factor);
+            _buckets = std::move(ht._buckets);
+            _non_empty_buckets = std::move(ht._non_empty_buckets);
+            return *this;
+		}
+
+		//HashTableType& operator= (intitializer_list<value_type> il);
 	};
 
 	template<typename K, typename V, typename HashFunc = DefaultHash>

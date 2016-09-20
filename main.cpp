@@ -22,11 +22,13 @@ void stress_test_hash_table(  )
 
 int main()
 {
+
+	std::unordered_map<int, int> um;
+	int x = um.bucket_count();
+	int y = um.max_bucket_count();
+
 	HashTable<int, int> ht;
 	HashTable<int, int> ht1;
-	ht.insert({ std::make_pair(1, 1), std::make_pair(2,2) });
-	ht == ht1;
-    ht!=ht1;
 	ht[2] = 3;
 	ht.clear();
     stress_test_hash_table(  );
