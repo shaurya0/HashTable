@@ -24,6 +24,7 @@ int main()
 {
 	HashTable<int, int> ht;
 	HashTable<int, int> ht1;
+	ht.insert({ std::make_pair(1, 1), std::make_pair(2,2) });
 	ht == ht1;
     ht!=ht1;
 	ht[2] = 3;
