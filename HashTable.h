@@ -49,7 +49,7 @@ namespace ss
 		typedef typename chain_t::iterator local_iterator;
 		typedef typename chain_t::const_iterator const_local_iterator;
 
-		static constexpr size_type DEFAULT_BUCKET_COUNT = 1 << 10;
+		static constexpr size_type DEFAULT_BUCKET_COUNT = 1 << 3;
 		typedef typename HashTable<K, V, HashFunc> HashTableType;
 
 		explicit HashTable(size_type bucket_count = DEFAULT_BUCKET_COUNT)
@@ -181,18 +181,30 @@ namespace ss
 
 		void rehash(size_type n)
 		{
-			if (n < _bucket_count)
+			if (n <= _bucket_count)
 				return;
 
-            *this = std::move( HashTableType( _buckets.begin(), _buckets.end(), n ) );
+            vector<chain_t> buckets = std::move( _buckets );
+            _init( n );
+
+            for( auto& chain : buckets )
+            {
+                if( chain.empty() )
+                    continue;
+
+                for( auto& kv : chain )
+                {
+                    insert( std::move( kv ) );
+                }
+            }
 		}
 
 	private:
 		//0: found, 1: bucket index, 2: chain index
 		template<typename U>
-		std::tuple<bool, size_t, size_t> _find(U &&k) const noexcept
+		std::tuple<bool, size_t, size_t> _find(U &&key) const noexcept
 		{
-			size_type bucket_idx = bucket_private(std::forward<U>(k));
+			size_type bucket_idx = bucket_private(std::forward<U>(key));
 			const chain_t &bucket = _buckets[bucket_idx];
 
 			bool key_found = false;
@@ -200,9 +212,9 @@ namespace ss
 			chain_t::const_iterator it;
 			if (!bucket.empty())
 			{
-				auto predicate = [&k](const std::pair<K, V> &item)
+				auto predicate = [&key](const std::pair<K, V> &item)
 				{
-					return std::forward<U>(k) == item.first;
+					return std::forward<U>(key) == item.first;
 				};
 				it = std::find_if(bucket.begin(), bucket.end(), predicate);
 				key_found = it != bucket.end();
@@ -214,10 +226,25 @@ namespace ss
 		template<typename U>
 		mapped_type& _insert_in_container(size_type bucket_idx, U &&value, size_t *chain_idx = nullptr)
 		{
+			float new_load_factor = static_cast<float>(_size+1) / static_cast<float>(_bucket_count);
+			size_t buckets = _bucket_count;
+			bool rehashed = false;
+			while (new_load_factor >= _max_load_factor)
+			{
+				buckets <<= 1;
+				new_load_factor = static_cast<float>(_size+1) / static_cast<float>(buckets);
+				rehashed = true;
+			}
+
+			rehash(buckets);
+
+			if (rehashed)
+				bucket_idx = bucket_private(std::forward<U>(value).first);
+
             chain_t &bucket = _buckets[bucket_idx];
             if (bucket.empty())
             {
-                ++_bucket_count;
+                // ++_bucket_count;
                 _non_empty_buckets[bucket_idx] = 1;
 
                 if (bucket_idx < _first_nonempty_bucket)
@@ -233,24 +260,14 @@ namespace ss
 			if (chain_idx != nullptr)
 				*chain_idx = bucket.size() - 1;
 
-            _load_factor = static_cast<float>(_size) / static_cast<float>(_bucket_count);
-
-            size_t buckets = _bucket_count << 1;
-            while (_load_factor >= _max_load_factor)
-            {
-                buckets <<= 1;
-                _load_factor = static_cast<float>(_size) / static_cast<float>(buckets);
-            }
-
-            // rehash(buckets);
-
 			return _buckets[bucket_idx].back().second;
 		}
 
 		template<typename U>
 		mapped_type& _at(U &&k, NOT_FOUND_POLICY not_found_policy)
 		{
-			auto found = _find(std::forward<U>(k));
+			//auto found = _find(std::forward<U>(k));
+			std::tuple<bool, size_t, size_t> found;
 			const bool key_found = std::get<0>(found);
 			const size_type bucket_idx = std::get<1>(found);
 			const size_type chain_idx = std::get<2>(found);
@@ -463,7 +480,7 @@ namespace ss
 		template<typename U>
 		std::pair<iterator, bool> _insert(U &&val)
 		{
-			auto found = _find(val.first);
+			auto found = _find(std::forward<U>(val).first);
 			if(std::get<0>(found))
 				return std::make_pair(end(), false);
 

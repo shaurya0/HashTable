@@ -2,9 +2,11 @@
 #include <iostream>
 #include <random>
 #include <unordered_map>
+#include <gtest/gtest.h>
 
 using namespace ss;
 using namespace std;
+
 
 
 void stress_test_hash_table(  )
@@ -35,9 +37,6 @@ int main()
 	um.clear();
 	x = um.bucket_count();
 	HashTable<int, int> ht;
-	HashTable<int, int> ht1;
-	ht[2] = 3;
-	ht.insert(std::make_pair(3, 4));
     stress_test_hash_table(  );
 	getchar();
 	return 0;
