@@ -171,6 +171,7 @@ namespace ss
 
 		void max_load_factor(float z)
 		{
+			_max_load_factor = z;
 			size_type nload = static_cast<size_type>(_bucket_count * _max_load_factor);
 			if (nload < n)
 				rehash(n);
