@@ -2,7 +2,7 @@
 #include <iostream>
 #include <random>
 #include <unordered_map>
-#include <gtest/gtest.h>
+//#include <gtest/gtest.h>
 
 using namespace ss;
 using namespace std;
@@ -13,31 +13,23 @@ void stress_test_hash_table(  )
 {
     HashTable<int,int> htable;
     std::default_random_engine generator;
-    std::uniform_int_distribution<int> distribution(INT_MIN, INT_MAX);
-    for (int i = 0; i < 1<<10; ++i)
+    std::uniform_int_distribution<int> distribution(0, INT_MAX);
+    for (int i = 0; i < 1<<4; ++i)
     {
-        int key = distribution(generator);
-        int value = distribution(generator);
-        htable[key] = value;
+        htable[i] = i;
     }
+	htable.erase(8);
+	for (HashTable<int, int>::const_iterator it = htable.begin(); it != htable.end(); ++it)
+	{
+		std::cout << it->first << " : " << it->second << std::endl;
+	}
 }
 
 int main()
 {
-
-	std::unordered_map<int, int> um;
-	int x = um.bucket_count();
-	for (int i = 0; i < 16; ++i)
-	{
-		um[i] = i;
-	}
-
-	x = um.bucket_count();
-
-	um.clear();
-	x = um.bucket_count();
 	HashTable<int, int> ht;
     stress_test_hash_table(  );
+
 	getchar();
 	return 0;
 }

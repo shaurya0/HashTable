@@ -315,26 +315,32 @@ namespace ss
 			typedef typename std::conditional<is_const_iterator, const HashTableType*, HashTableType*>::type container_ptr_t;
 			typedef typename std::conditional<is_const_iterator, const value_type&, value_type&>::type reference_type_it_t;
 			typedef typename std::conditional<is_const_iterator, const value_type*, value_type*>::type pointer_type_it_t;
-			friend class container_t;
-			friend class _ht_iterator<false>;
+
 			friend class _ht_iterator<true>;
+			friend class HashTableType;
+            _ht_iterator(container_ptr_t container = nullptr, size_type bucket_idx = 0, size_type chain_idx = 0)
+                : _container(container)
+                , _bucket_idx(bucket_idx)
+                , _chain_idx(chain_idx) {}
 
-			_ht_iterator(container_ptr_t container = nullptr, size_type bucket_idx = 0, size_type chain_idx = 0)
-				: _container(container)
-				, _bucket_idx(bucket_idx)
-				, _chain_idx(chain_idx) {}
 
-			_ht_iterator(const _ht_iterator<false> &other)
+			_ht_iterator(const _ht_iterator<false>& other)
 				: _container(other._container)
 				, _bucket_idx(other._bucket_idx)
-				, _chain_idx(other._chain_idx)
-			{}
+				, _chain_idx(other._chain_idx) {}
+
+
+			_ht_iterator(const _ht_iterator<true>& other)
+				: _container(const_cast<container_ptr_t>(other._container))
+				, _bucket_idx(other._bucket_idx)
+				, _chain_idx(other._chain_idx) {}
 
 			_ht_iterator &operator++()
 			{
-				assert(_container != nullptr && _bucket_idx < _container->_bucket_count && _chain_idx < _container->_buckets[_bucket_idx].size());
+				assert(_container != nullptr && _bucket_idx < _container->_bucket_count );
+
 				const auto &chain = _container->_buckets[_bucket_idx];
-				if (_chain_idx < (chain.size() - 1))
+				if (!chain.empty() && _chain_idx < (chain.size()-1))
 				{
 					++_chain_idx;
 					return *this;
@@ -348,14 +354,19 @@ namespace ss
 					return *this;
 				}
 
+				// todo: hack to get end to match
+				if (_chain_idx < chain.size())
+					++_chain_idx;
+
 				return _container->end();
 			}
 
 			_ht_iterator operator++(int dummy)
 			{
 				assert(_container != nullptr && _bucket_idx < _container->_bucket_count && _chain_idx < _container->_buckets[_bucket_idx].size());
+
 				const auto &chain = _container->_buckets[_bucket_idx];
-				if (_chain_idx < (chain.size() - 1))
+				if (!chain.empty() && _chain_idx < (chain.size() - 1))
 				{
 					_ht_iterator me = *this;
 					_chain_idx++;
@@ -370,6 +381,10 @@ namespace ss
 					_chain_idx = 0;
 					return me;
 				}
+
+				// todo: hack to get end to match
+				if (_chain_idx < chain.size())
+					++_chain_idx;
 
 				return _container->end();
 			}
@@ -391,12 +406,13 @@ namespace ss
 				return (_container == other._container && _bucket_idx == other._bucket_idx && _chain_idx == other._chain_idx);
 			}
 
-			bool operator !=(const _ht_iterator &other) const
-			{
-				return (_container != other._container || _bucket_idx != other._bucket_idx || _chain_idx != other._chain_idx);
-			}
+            bool operator !=(const _ht_iterator &other) const
+            {
+                return !( *this == other );
+            }
 
-			_ht_iterator operator=(const _ht_iterator &other)
+			template<bool b>
+			_ht_iterator<b> &operator=(const _ht_iterator<b> &other)
 			{
 				if (&other == this)
 					return *this;
@@ -417,6 +433,7 @@ namespace ss
 	public:
 		using iterator = _ht_iterator<false>;
 		using const_iterator = _ht_iterator<true>;
+		friend class iterator;
 
 		iterator begin()
 		{
@@ -472,9 +489,8 @@ namespace ss
 			_non_empty_buckets.reset();
 			_load_factor = 0.0f;
 			_max_load_factor = 1.0f;
-			_first_nonempty_bucket = std::numeric_limits<size_type>::max();
+			_first_nonempty_bucket = bucket_count;
 			_last_nonempty_bucket = 0;
-
 		}
 
 		template<typename U>
@@ -532,6 +548,72 @@ namespace ss
 				_insert(value);
 			}
 		}
+
+        iterator erase ( const_iterator position )
+        {
+			if (position._bucket_idx >= _bucket_count)
+				return end();
+
+			chain_t &bucket = _buckets[position._bucket_idx];
+			if (position._chain_idx >= bucket.size())
+				return end();
+
+            local_iterator it = bucket.begin();
+            std::advance(it, position._chain_idx);
+
+            local_iterator result = bucket.erase(it);
+
+            --_size;
+            _load_factor = static_cast<float>( _size )/static_cast<float>(_bucket_count);
+
+            if( bucket.empty() )
+            {
+                if( _first_nonempty_bucket == position._bucket_idx )
+                {
+                    auto next_nonempty_bucket = _non_empty_buckets.find_next(position._bucket_idx);
+                    if (boost::dynamic_bitset<>::npos != next_nonempty_bucket)
+                        _first_nonempty_bucket = next_nonempty_bucket;
+                    else
+                        _first_nonempty_bucket = _bucket_count;
+                }
+
+                if( _last_nonempty_bucket == position._bucket_idx )
+                {
+                    auto next_nonempty_bucket = _non_empty_buckets.find_next(position._bucket_idx);
+                    if (boost::dynamic_bitset<>::npos != next_nonempty_bucket)
+                        _last_nonempty_bucket = next_nonempty_bucket;
+                    else
+                        _last_nonempty_bucket = _bucket_count;
+                }
+				_non_empty_buckets[position._bucket_idx] = 0;
+            }
+
+			if (result == bucket.end())
+				return std::next(position);
+        }
+
+		size_type erase(const key_type& k)
+		{
+			auto found = _find(k);
+			if (!std::get<0>(found))
+				return 0;
+
+			const_iterator it(this, std::get<1>(found), std::get<2>(found));
+			erase(it);
+			return 1;
+		}
+
+		iterator erase(const_iterator first, const_iterator last)
+		{
+			iterator it;
+			while (first != last)
+			{
+				it = erase(first);
+			}
+
+			return it;
+		}
+
 
 		HashTableType& operator= (const HashTableType& ht)
 		{
