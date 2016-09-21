@@ -583,7 +583,7 @@ namespace ss
                     if (boost::dynamic_bitset<>::npos != next_nonempty_bucket)
                         _last_nonempty_bucket = next_nonempty_bucket;
                     else
-                        _last_nonempty_bucket = _bucket_count;
+                        _last_nonempty_bucket = 0;
                 }
 				_non_empty_buckets[position._bucket_idx] = 0;
             }
