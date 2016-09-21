@@ -1,6 +1,3 @@
-// TODO:
-// unit tests
-
 #pragma once
 #include <vector>
 #include <iterator>
@@ -184,7 +181,7 @@ namespace ss
 			if (n <= _bucket_count)
 				return;
 
-            vector<chain_t> buckets = std::move( _buckets );
+            std::vector<chain_t> buckets = std::move( _buckets );
             _init( n );
 
             for( auto& chain : buckets )
@@ -256,6 +253,7 @@ namespace ss
 
 			bucket.push_back(std::forward<U>(value));
 			++_size;
+			_load_factor =  static_cast<float>(_size) / static_cast<float>(buckets);
 
 			if (chain_idx != nullptr)
 				*chain_idx = bucket.size() - 1;
@@ -266,8 +264,7 @@ namespace ss
 		template<typename U>
 		mapped_type& _at(U &&k, NOT_FOUND_POLICY not_found_policy)
 		{
-			//auto found = _find(std::forward<U>(k));
-			std::tuple<bool, size_t, size_t> found;
+			std::tuple<bool, size_t, size_t> found = _find(std::forward<U>(k));
 			const bool key_found = std::get<0>(found);
 			const size_type bucket_idx = std::get<1>(found);
 			const size_type chain_idx = std::get<2>(found);
@@ -437,14 +434,13 @@ namespace ss
 
 		iterator begin()
 		{
+			if (_size == 0)
+				return end();
 			return iterator(this, _first_nonempty_bucket, 0);
 		}
 
 		iterator end()
 		{
-			if (_size == 0)
-				return end();
-
 			return iterator(this, _last_nonempty_bucket, _buckets[_last_nonempty_bucket].size());
 		}
 
@@ -570,13 +566,14 @@ namespace ss
             {
                 if( _first_nonempty_bucket == position._bucket_idx )
                 {
-                    auto next_nonempty_bucket = _non_empty_buckets.find_next(position._bucket_idx);
+                    auto next_nonempty_bucket = _non_empty_buckets.find_first(0);
                     if (boost::dynamic_bitset<>::npos != next_nonempty_bucket)
                         _first_nonempty_bucket = next_nonempty_bucket;
                     else
                         _first_nonempty_bucket = _bucket_count;
                 }
 
+				//todo: fix bug
                 if( _last_nonempty_bucket == position._bucket_idx )
                 {
                     auto next_nonempty_bucket = _non_empty_buckets.find_next(position._bucket_idx);
@@ -605,10 +602,11 @@ namespace ss
 
 		iterator erase(const_iterator first, const_iterator last)
 		{
-			iterator it;
-			while (first != last)
+			const_iterator it = first;
+			while (it != last)
 			{
-				it = erase(first);
+				erase(it);
+				++it;
 			}
 
 			return it;
@@ -640,6 +638,7 @@ namespace ss
             _max_load_factor = std::move(ht._max_load_factor);
             _buckets = std::move(ht._buckets);
             _non_empty_buckets = std::move(ht._non_empty_buckets);
+            ht._init(DEFAULT_BUCKET_COUNT);
             return *this;
 		}
 
