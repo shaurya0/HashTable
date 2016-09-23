@@ -267,8 +267,6 @@ TEST(Iterator, IteratorPostfixIncrement)
 }
 
 
-
-
 TEST(Erase, EraseIterator)
 {
     using namespace ss;
@@ -323,22 +321,22 @@ TEST(Erase, EraseKey)
 }
 
 //broken test
- //TEST(Erase, EraseRange)
- //{
- //    using namespace ss;
- //    std::unordered_map<int, int> items;
- //    HashTable<int, int> ht;
- //    constexpr size_t N = 1 << 10;
- //    for (int i = 0; i < N; ++i)
- //    {
- //        items.insert( {i, i*3} );
- //        ht.insert( {i, i*3} );
+ TEST(Erase, EraseRange)
+ {
+     using namespace ss;
+     std::unordered_map<int, int> items;
+     HashTable<int, int> ht;
+     constexpr size_t N = 1 << 10;
+     for (int i = 0; i < N; ++i)
+     {
+         items.insert( {i, i*3} );
+         ht.insert( {i, i*3} );
 
- //    }
+     }
 
- //	ht.erase(ht.begin(), ht.end());
- //    EXPECT_EQ(ht.size(), 0);
- //}
+ 	ht.erase(ht.begin(), ht.end());
+     EXPECT_EQ(ht.size(), 0);
+ }
 
 
 TEST(Assignment, AssignmentLvalue)

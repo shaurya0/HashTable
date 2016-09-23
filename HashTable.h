@@ -179,7 +179,7 @@ namespace ss
 
 		void rehash(size_type n)
 		{
-			if (n <= _buckets.size())
+			if (n <= _bucket_count)
 				return;
 
             std::vector<chain_t> buckets = std::move( _buckets );
@@ -290,11 +290,12 @@ namespace ss
 		template<typename U>
 		size_type bucket_private(U &&k) const noexcept
 		{
-			const size_type idx = _hash_func(std::forward<U>(k)) % _buckets.size();
+			const size_type idx = _hash_func(std::forward<U>(k)) % _bucket_count;
 			return idx;
 		}
 
 		size_type _size;
+        size_type _bucket_count;
 		size_type _first_nonempty_bucket;
 		size_type _last_nonempty_bucket;
 
@@ -415,12 +416,13 @@ namespace ss
 		{
 			if (_size == 0)
 				return end();
+
 			return iterator(this, _first_nonempty_bucket, 0);
 		}
 
 		iterator end()
 		{
-			return iterator(this, _last_nonempty_bucket, _buckets[_last_nonempty_bucket].size());
+			return iterator(this, _buckets.size() - 1, 0);
 		}
 
 		const_iterator begin() const
@@ -433,7 +435,7 @@ namespace ss
 
 		const_iterator end() const
 		{
-			return const_iterator(this, _last_nonempty_bucket, _buckets[_last_nonempty_bucket].size());
+			return const_iterator(this, _buckets.size() - 1, 0);
 		}
 	public:
 
@@ -459,6 +461,7 @@ namespace ss
 		{
 			_buckets.assign(bucket_count, chain_t{});
 			_size = 0;
+            _bucket_count = bucket_count > 0 ? bucket_count - 1 : 0;
 			_non_empty_buckets.resize(bucket_count);
 			_non_empty_buckets.reset();
 			_load_factor = 0.0f;
@@ -523,8 +526,8 @@ namespace ss
 			}
 		}
 
-        iterator erase ( const_iterator position )
-        {
+		iterator erase(const_iterator position)
+		{
 			if (position._bucket_idx >= _buckets.size())
 				return end();
 
@@ -532,40 +535,59 @@ namespace ss
 			if (position._chain_idx >= bucket.size())
 				return end();
 
-            local_iterator it = bucket.begin();
-            std::advance(it, position._chain_idx);
+			local_iterator it = bucket.begin();
+			std::advance(it, position._chain_idx);
 
-            local_iterator result = bucket.erase(it);
+			local_iterator result = bucket.erase(it);
 
-            --_size;
-            _load_factor = static_cast<float>( _size )/static_cast<float>(_buckets.size());
+			_load_factor = static_cast<float>(--_size) / static_cast<float>(_buckets.size());
 
-            if( bucket.empty() )
-            {
-                if( _first_nonempty_bucket == position._bucket_idx )
-                {
-                    auto next_nonempty_bucket = _non_empty_buckets.find_first();
-                    if (boost::dynamic_bitset<>::npos != next_nonempty_bucket)
-                        _first_nonempty_bucket = next_nonempty_bucket;
-                    else
-                        _first_nonempty_bucket = _buckets.size();
-                }
-
-				//todo: fix bug
-                if( _last_nonempty_bucket == position._bucket_idx )
-                {
-                    auto next_nonempty_bucket = _non_empty_buckets.find_next(position._bucket_idx);
-                    if (boost::dynamic_bitset<>::npos != next_nonempty_bucket)
-                        _last_nonempty_bucket = next_nonempty_bucket;
-                    else
-                        _last_nonempty_bucket = 0;
-                }
+			if (bucket.empty())
+			{
 				_non_empty_buckets[position._bucket_idx] = 0;
-            }
+
+				if (_first_nonempty_bucket == position._bucket_idx)
+				{
+					auto next_nonempty_bucket = _non_empty_buckets.find_first();
+
+					if (boost::dynamic_bitset<>::npos != next_nonempty_bucket)
+					{
+						_first_nonempty_bucket = next_nonempty_bucket;
+						return iterator(this, next_nonempty_bucket, 0);
+					}
+					else
+						return end();
+				}
+
+				if (_last_nonempty_bucket == 0)
+					return end();
+
+				if (_last_nonempty_bucket == position._bucket_idx)
+				{
+					std::vector<chain_t>::reverse_iterator rit = _buckets.rbegin();
+					std::advance(rit, _buckets.size() - position._bucket_idx);
+
+					size_t j = position._bucket_idx - 1;
+					for (; rit != _buckets.rend(); ++rit)
+					{
+						if (!rit->empty())
+						{
+							_last_nonempty_bucket = j;
+							return iterator(this, _last_nonempty_bucket, 0);
+						}
+						--j;
+					}
+
+					return end();
+
+				}
+			}
 
 			if (result == bucket.end())
 				return std::next(position);
-        }
+
+			return position;
+		}
 
 		size_type erase(const key_type& k)
 		{
@@ -594,6 +616,7 @@ namespace ss
 		HashTableType& operator= (const HashTableType& ht)
 		{
             _size = ht._size;
+            _bucket_count = ht._bucket_count;
             _first_nonempty_bucket = ht._first_nonempty_bucket;
             _last_nonempty_bucket = ht._last_nonempty_bucket;
 
@@ -607,6 +630,7 @@ namespace ss
 		HashTableType& operator= (HashTableType&& ht)
 		{
             _size = std::move(ht._size);
+            _bucket_count = std::move(ht._bucket_count);
             _first_nonempty_bucket = std::move(ht._first_nonempty_bucket);
             _last_nonempty_bucket = std::move(ht._last_nonempty_bucket);
 
