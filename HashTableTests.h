@@ -224,6 +224,7 @@ TEST(Find, Find)
 }
 
 
+<<<<<<< HEAD
 TEST(Iterator, IteratorPrefixIncrement)
 {
 	using namespace ss;
@@ -266,6 +267,8 @@ TEST(Iterator, IteratorPostfixIncrement)
     EXPECT_EQ(ht.size(), count);
 }
 
+=======
+>>>>>>> parent of 6bd94f6... wip
 
 TEST(Erase, EraseIterator)
 {
