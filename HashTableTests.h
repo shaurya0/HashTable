@@ -345,9 +345,9 @@ TEST(Erase, EraseKey)
     }
 }
 
-// //broken test
- TEST(Erase, EraseRange)
- {
+
+TEST(Erase, EraseRange)
+{
     using namespace ss;
     HashTable<int, int> ht;
     constexpr size_t N = 1 << 10;
@@ -356,9 +356,32 @@ TEST(Erase, EraseKey)
         ht.insert( {i, i*3} );
     }
 
- 	ht.erase(ht.begin(), ht.end());
+    ht.erase(ht.begin(), ht.end());
     EXPECT_EQ(ht.size(), 0);
- }
+}
+
+
+TEST(Erase, EraseSmallRange)
+{
+    using namespace ss;
+    HashTable<int, int> ht;
+    constexpr size_t N = 1 << 10;
+    for (int i = 0; i < N; ++i)
+    {
+        ht.insert( {i, i*3} );
+    }
+
+	HashTable<int, int>::iterator start = ht.begin();
+	std::advance(start, 5);
+	HashTable<int, int>::iterator end = start;
+	std::advance(end, 5);
+	ht.erase(start, end);
+
+    EXPECT_EQ(ht.size(), N-5);
+}
+
+
+
 
 
 TEST(Assignment, AssignmentLvalue)
