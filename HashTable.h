@@ -135,12 +135,12 @@ namespace ss
 
 		size_type bucket_count() const noexcept
 		{
-			return _buckets.size();
+			return _buckets_count();
 		}
 
 		size_type bucket_size(size_type n) const
 		{
-			if (n >= _buckets.size())
+			if (n >= _buckets_count())
 			{
 				throw std::out_of_range("bucket index out of range");
 			}
@@ -164,7 +164,7 @@ namespace ss
 
 		void reserve(size_type n)
 		{
-			size_type nload = static_cast<size_type>(_buckets.size() * _max_load_factor);
+			size_type nload = static_cast<size_type>(_buckets_count() * _max_load_factor);
 			if (nload < n)
 				rehash(n);
 		}
@@ -172,14 +172,14 @@ namespace ss
 		void max_load_factor(float z)
 		{
 			_max_load_factor = z;
-			size_type nload = static_cast<size_type>(_buckets.size() * _max_load_factor);
+			size_type nload = static_cast<size_type>(_buckets_count() * _max_load_factor);
 			if (nload < n)
 				rehash(n);
 		}
 
 		void rehash(size_type n)
 		{
-			if (n <= _buckets.size())
+			if (n <= _buckets_count())
 				return;
 
             std::vector<chain_t> buckets = std::move( _buckets );
@@ -198,6 +198,11 @@ namespace ss
 		}
 
 	private:
+        size_type _buckets_count() const
+        {
+            return _buckets.size() > 0 ? _buckets.size() - 1 : 0;
+        }
+
 		//0: found, 1: bucket index, 2: chain index
 		template<typename U>
 		std::tuple<bool, size_t, size_t> _find(U &&key) const noexcept
@@ -224,7 +229,7 @@ namespace ss
 		template<typename U>
 		mapped_type& _insert_in_container(size_type bucket_idx, U &&value, size_t *chain_idx = nullptr)
 		{
-			size_t buckets = _buckets.size();
+			size_t buckets = _buckets_count();
             float new_load_factor = static_cast<float>(_size+1) / static_cast<float>(buckets);
 			bool rehashed = false;
 			while (new_load_factor >= _max_load_factor)
@@ -246,9 +251,6 @@ namespace ss
 
                 if (bucket_idx < _first_nonempty_bucket)
                     _first_nonempty_bucket = bucket_idx;
-
-                if (bucket_idx > _last_nonempty_bucket)
-                    _last_nonempty_bucket = bucket_idx;
             }
 
 			bucket.push_back(std::forward<U>(value));
@@ -290,13 +292,12 @@ namespace ss
 		template<typename U>
 		size_type bucket_private(U &&k) const noexcept
 		{
-			const size_type idx = _hash_func(std::forward<U>(k)) % _buckets.size();
+			const size_type idx = _hash_func(std::forward<U>(k)) % _buckets_count();
 			return idx;
 		}
 
 		size_type _size;
 		size_type _first_nonempty_bucket;
-		size_type _last_nonempty_bucket;
 
 		float _load_factor;
 		float _max_load_factor;
@@ -333,7 +334,7 @@ namespace ss
 
 			_ht_iterator &operator++()
 			{
-				assert(_container != nullptr && _bucket_idx < _container->_buckets.size() );
+				assert(_container != nullptr && _bucket_idx < _container->_buckets_count() );
 
 				const auto &chain = _container->_buckets[_bucket_idx];
 				if (!chain.empty() && _chain_idx < (chain.size()-1))
@@ -350,16 +351,13 @@ namespace ss
 					return *this;
 				}
 
-				// todo: hack to get end to match
-				if (_chain_idx < chain.size())
-					++_chain_idx;
-
-				return _container->end();
+				*this = _container->end();
+				return *this;
 			}
 
 			_ht_iterator operator++(int dummy)
 			{
-				assert(_container != nullptr && _bucket_idx < _container->_buckets.size() && _chain_idx < _container->_buckets[_bucket_idx].size());
+				assert(_container != nullptr && _bucket_idx < _container->_buckets_count() && _chain_idx < _container->_buckets[_bucket_idx].size());
 				_ht_iterator copy(*this);
 				++*this;
 				return copy;
@@ -367,13 +365,13 @@ namespace ss
 
 			reference_type_it_t operator*()
 			{
-				assert(_container != nullptr && _bucket_idx < _container->_buckets.size() && _chain_idx < _container->_buckets[_bucket_idx].size());
+				assert(_container != nullptr && _bucket_idx < _container->_buckets_count() && _chain_idx < _container->_buckets[_bucket_idx].size());
 				return _container->_buckets[_bucket_idx][_chain_idx];
 			}
 
 			pointer_type_it_t operator->()
 			{
-				assert(_container != nullptr && _bucket_idx < _container->_buckets.size() && _chain_idx < _container->_buckets[_bucket_idx].size());
+				assert(_container != nullptr && _bucket_idx < _container->_buckets_count() && _chain_idx < _container->_buckets[_bucket_idx].size());
 				return &(_container->_buckets[_bucket_idx][_chain_idx]);
 			}
 
@@ -420,7 +418,7 @@ namespace ss
 
 		iterator end()
 		{
-			return iterator(this, _last_nonempty_bucket, _buckets[_last_nonempty_bucket].size());
+			return iterator(this, _buckets_count(), 0);
 		}
 
 		const_iterator begin() const
@@ -433,7 +431,7 @@ namespace ss
 
 		const_iterator end() const
 		{
-			return const_iterator(this, _last_nonempty_bucket, _buckets[_last_nonempty_bucket].size());
+			return const_iterator(this, _buckets_count(), 0);
 		}
 	public:
 
@@ -457,14 +455,13 @@ namespace ss
 	private:
 		void _init(size_type bucket_count)
 		{
-			_buckets.assign(bucket_count, chain_t{});
+			_buckets.assign(bucket_count + 1, chain_t{});
 			_size = 0;
 			_non_empty_buckets.resize(bucket_count);
 			_non_empty_buckets.reset();
 			_load_factor = 0.0f;
 			_max_load_factor = 1.0f;
 			_first_nonempty_bucket = bucket_count;
-			_last_nonempty_bucket = 0;
 		}
 
 		template<typename U>
@@ -523,9 +520,12 @@ namespace ss
 			}
 		}
 
-        iterator erase ( const_iterator position )
+        iterator erase( const_iterator position )
         {
-			if (position._bucket_idx >= _buckets.size())
+            if( _size == 0 )
+                return end();
+
+			if (position._bucket_idx >= _buckets_count())
 				return end();
 
 			chain_t &bucket = _buckets[position._bucket_idx];
@@ -538,33 +538,26 @@ namespace ss
             local_iterator result = bucket.erase(it);
 
             --_size;
-            _load_factor = static_cast<float>( _size )/static_cast<float>(_buckets.size());
+            _load_factor = static_cast<float>( _size )/static_cast<float>(_buckets_count());
 
             if( bucket.empty() )
             {
+				_non_empty_buckets[position._bucket_idx] = 0;
+
                 if( _first_nonempty_bucket == position._bucket_idx )
                 {
                     auto next_nonempty_bucket = _non_empty_buckets.find_first();
                     if (boost::dynamic_bitset<>::npos != next_nonempty_bucket)
                         _first_nonempty_bucket = next_nonempty_bucket;
                     else
-                        _first_nonempty_bucket = _buckets.size();
+                        _first_nonempty_bucket = _buckets_count();
                 }
-
-				//todo: fix bug
-                if( _last_nonempty_bucket == position._bucket_idx )
-                {
-                    auto next_nonempty_bucket = _non_empty_buckets.find_next(position._bucket_idx);
-                    if (boost::dynamic_bitset<>::npos != next_nonempty_bucket)
-                        _last_nonempty_bucket = next_nonempty_bucket;
-                    else
-                        _last_nonempty_bucket = 0;
-                }
-				_non_empty_buckets[position._bucket_idx] = 0;
             }
 
 			if (result == bucket.end())
 				return std::next(position);
+			else
+				return position;
         }
 
 		size_type erase(const key_type& k)
@@ -580,11 +573,11 @@ namespace ss
 
 		iterator erase(const_iterator first, const_iterator last)
 		{
-			const_iterator it = first;
-			while (it != last)
+			iterator it = first;
+			const iterator last_it = last;
+			while (it != last_it)
 			{
-				erase(it);
-				++it;
+				it = erase(it);
 			}
 
 			return it;
@@ -595,7 +588,6 @@ namespace ss
 		{
             _size = ht._size;
             _first_nonempty_bucket = ht._first_nonempty_bucket;
-            _last_nonempty_bucket = ht._last_nonempty_bucket;
 
             _load_factor = ht._load_factor;
             _max_load_factor = ht._max_load_factor;
@@ -608,7 +600,6 @@ namespace ss
 		{
             _size = std::move(ht._size);
             _first_nonempty_bucket = std::move(ht._first_nonempty_bucket);
-            _last_nonempty_bucket = std::move(ht._last_nonempty_bucket);
 
             _load_factor = std::move(ht._load_factor);
             _max_load_factor = std::move(ht._max_load_factor);

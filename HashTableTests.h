@@ -13,28 +13,51 @@ TEST(ConstructorInt, BucketCount)
     EXPECT_EQ(bucket_count, ht.bucket_count());
 }
 
-TEST(ConstructorInt, IteratorRange)
-{
-    using namespace ss;
-    constexpr size_t N = 1 << 10;
-    std::unordered_map<int, int> items;
 
-    for (int i = 0; i < N; ++i)
-    {
-        items[i] = i * 3;
-    }
+//TEST(ConstructorInt, IteratorRangeSmall)
+//{
+//    using namespace ss;
+//    constexpr size_t N = 1 << 3;
+//    std::unordered_map<int, int> items;
+//
+//    for (int i = 0; i < N; ++i)
+//    {
+//        items[i] = i;
+//    }
+//
+//    HashTable<int, int> ht(items.begin(), items.end());
+//    for( auto kv = ht.begin(); kv != ht.end(); ++kv)
+//    {
+//        // int value_ref = items.at(kv.first);
+//        // int value = ht.at( kv.first );
+//        std::cout << kv->first << ", " << kv->second << std::endl;
+//    }
+//
+//    EXPECT_EQ(1, 1);
+//}
 
-    HashTable<int, int> ht(items.begin(), items.end());
-    for( const auto &kv : ht )
-    {
-        int value_ref = items.at(kv.first);
-        int value = ht.at( kv.first );
+ TEST(ConstructorInt, IteratorRange)
+ {
+     using namespace ss;
+     constexpr size_t N = 1 << 10;
+     std::unordered_map<int, int> items;
 
-        EXPECT_EQ( value, value_ref );
-    }
+     for (int i = 0; i < N; ++i)
+     {
+         items[i] = i * 3;
+     }
 
-    EXPECT_EQ(N, ht.size());
-}
+     HashTable<int, int> ht(items.begin(), items.end());
+     for( const auto &kv : ht )
+     {
+         int value_ref = items.at(kv.first);
+         int value = ht.at( kv.first );
+
+         EXPECT_EQ( value, value_ref );
+     }
+
+     EXPECT_EQ(N, ht.size());
+ }
 
 TEST(ConstructorInt, ConstRefOther)
 {
@@ -322,23 +345,20 @@ TEST(Erase, EraseKey)
     }
 }
 
-//broken test
- //TEST(Erase, EraseRange)
- //{
- //    using namespace ss;
- //    std::unordered_map<int, int> items;
- //    HashTable<int, int> ht;
- //    constexpr size_t N = 1 << 10;
- //    for (int i = 0; i < N; ++i)
- //    {
- //        items.insert( {i, i*3} );
- //        ht.insert( {i, i*3} );
+// //broken test
+ TEST(Erase, EraseRange)
+ {
+    using namespace ss;
+    HashTable<int, int> ht;
+    constexpr size_t N = 1 << 10;
+    for (int i = 0; i < N; ++i)
+    {
+        ht.insert( {i, i*3} );
+    }
 
- //    }
-
- //	ht.erase(ht.begin(), ht.end());
- //    EXPECT_EQ(ht.size(), 0);
- //}
+ 	ht.erase(ht.begin(), ht.end());
+    EXPECT_EQ(ht.size(), 0);
+ }
 
 
 TEST(Assignment, AssignmentLvalue)
